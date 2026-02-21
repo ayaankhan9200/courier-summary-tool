@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Courier Count Generator PRO</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body { margin:0; font-family:'Segoe UI',sans-serif; background:linear-gradient(135deg,#1e3c72,#2a5298); }
+.container { max-width:1200px; margin:40px auto; background:#fff; padding:30px; border-radius:12px; }
+textarea { width:100%; height:350px; padding:15px; font-family:monospace; }
+button { padding:12px 25px; margin:10px; border:none; border-radius:8px; font-weight:bold; cursor:pointer; }
+.generate-btn{background:#28a745;color:white;}
+.excel-btn{background:#007bff;color:white;}
+table{margin-top:30px;border-collapse:collapse;width:100%;}
+th{background:#2a5298;color:white;padding:10px;}
+td{padding:8px;border:1px solid #ddd;}
+.total-row{background:#ffe066;font-weight:bold;}
+.mismatch{background:#ffcccc;}
+.bold-number{font-weight:bold;color:#1e3c72;}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h1>🚚 Courier Count Generator PRO</h1>
+
+<textarea id="inputData" placeholder="Paste summary here..."></textarea>
+
+<div style="text-align:center;">
+<button class="generate-btn" onclick="generateReport()">Generate Report</button>
+<button class="excel-btn" onclick="downloadExcel()">Download Excel</button>
+</div>
+
+<div id="output"></div>
+</div>
+
+<script>
+
+let finalData = [];
+let courierSummaryData = [];
+
+function parseNumber(text){
+    if(!text) return 0;
+
+    text = text.replace("Total Quantity:","")
+               .replace("Total:","")
+               .replace("=","")
+               .trim();
+
+    if(text.includes("+")){
+        return text.split("+")
+                   .reduce((a,b)=>a+parseInt(b.trim()||0),0);
+    }
+
+    return parseInt(text) || 0;
+}
+
+function normalizeCourier(name){
+    name = name.toLowerCase();
+    if(name.includes("blue")) return "BlueDart";
+    if(name.includes("ekart")) return "Ekart";
+    if(name.includes("delhivery")) return "Delhivery";
+    if(name.includes("xpress")) return "XpressBees";
+    if(name.includes("shadowfax")) return "Shadowfax";
+    if(name.includes("amazon")) return "Amazon";
+    if(name.includes("pick")) return "Pickndel";
+    if(name.includes("blitz")) return "Blitz";
+    return null;
+}
+
+function createEmptyRow(product){
+    return {
+        Product: product,
+        TotalQty: 0,
+        BlueDart: 0,
+        Ekart: 0,
+        Delhivery: 0,
+        XpressBees: 0,
+        Shadowfax: 0,
+        Amazon: 0,
+        Pickndel: 0,
+        Blitz: 0
+    };
+}
+
+function cleanProductName(name){
+    return name.replace(" - Total","")
+               .replace("- Total","")
+               .replace("Total:","")
+               .trim();
+}
+
+function generateReport(){
+
+    let lines = document.getElementById("inputData").value.split("\n");
+
+    let products = {};
+    let currentProduct = null;
+
+    lines.forEach(line=>{
+
+        line = line.trim();
+        if(!line || line.startsWith("-") || line.includes("Couriers")) return;
+
+        // FORMAT 1 & 3 → ProductName - 314 OR ProductName - Total: 80
+        if(line.includes("-")){
+
+            let parts = line.split("-");
+            let left = parts[0].trim();
+            let right = parts.slice(1).join("-").trim();
+
+            let courier = normalizeCourier(left);
+
+            // If NOT courier → product line
+            if(!courier && right){
+
+                currentProduct = cleanProductName(left);
+
+                if(!products[currentProduct])
+                    products[currentProduct] = createEmptyRow(currentProduct);
+
+                products[currentProduct].TotalQty += parseNumber(right);
+                return;
+            }
+
+            // If courier line
+            if(courier && currentProduct){
+                products[currentProduct][courier] += parseNumber(right);
+                return;
+            }
+        }
+
+        // FORMAT 2 → Product:
+        if(line.startsWith("Product:")){
+            currentProduct = cleanProductName(
+                line.replace("Product:","").trim()
+            );
+
+            if(!products[currentProduct])
+                products[currentProduct] = createEmptyRow(currentProduct);
+
+            return;
+        }
+
+        // Total Quantity line
+        if(line.startsWith("Total Quantity:") && currentProduct){
+            products[currentProduct].TotalQty += parseNumber(line);
+            return;
+        }
+
+        // FORMAT with colon courier
+        if(line.includes(":") && currentProduct){
+
+            let parts = line.split(":");
+            let courierName = parts[0].replace(".","").trim();
+            let courier = normalizeCourier(courierName);
+
+            if(courier){
+                products[currentProduct][courier] += parseNumber(parts[1]);
+            }
+        }
+
+    });
+
+    finalData = Object.values(products);
+
+    // Sort highest first
+    finalData.sort((a,b)=>b.TotalQty - a.TotalQty);
+
+    renderTable();
+}
+
+function renderTable(){
+
+    let grand = createEmptyRow("Grand Total");
+
+    let html = "<table><tr>";
+    Object.keys(grand).forEach(k=>html+="<th>"+k+"</th>");
+    html+="</tr>";
+
+    finalData.forEach(row=>{
+
+        let courierSum = row.BlueDart + row.Ekart + row.Delhivery +
+                         row.XpressBees + row.Shadowfax + row.Amazon +
+                         row.Pickndel + row.Blitz;
+
+        let mismatchClass = courierSum !== row.TotalQty ? "mismatch" : "";
+
+        html += `<tr class="${mismatchClass}">`;
+
+        Object.keys(row).forEach(key=>{
+            let val = row[key];
+            if(key!=="Product" && val>0)
+                val = `<span class="bold-number">${val}</span>`;
+            html += "<td>"+val+"</td>";
+            if(key!=="Product")
+                grand[key] += row[key];
+        });
+
+        html+="</tr>";
+    });
+
+    html+="<tr class='total-row'>";
+    Object.keys(grand).forEach(k=>html+="<td>"+grand[k]+"</td>");
+    html+="</tr></table>";
+
+    // Courier Summary
+    courierSummaryData = [
+        {Courier:"BlueDart", Qty:grand.BlueDart},
+        {Courier:"Ekart", Qty:grand.Ekart},
+        {Courier:"Delhivery", Qty:grand.Delhivery},
+        {Courier:"XpressBees", Qty:grand.XpressBees},
+        {Courier:"Shadowfax", Qty:grand.Shadowfax},
+        {Courier:"Amazon", Qty:grand.Amazon},
+        {Courier:"Pickndel", Qty:grand.Pickndel},
+        {Courier:"Blitz", Qty:grand.Blitz}
+    ];
+
+    courierSummaryData.sort((a,b)=>b.Qty-a.Qty);
+
+    html+=`<h2 style="margin-top:40px;">📊 Courier Wise Summary</h2>
+           <table style="max-width:500px;margin:auto;">
+           <tr><th>Courier</th><th>Qty</th></tr>`;
+
+    courierSummaryData.forEach(c=>{
+        html+=`<tr>
+                 <td><b>${c.Courier}</b></td>
+                 <td class="bold-number">${c.Qty}</td>
+               </tr>`;
+    });
+
+    html+="</table>";
+
+    document.getElementById("output").innerHTML = html;
+
+    finalData.push(grand);
+}
+
+function downloadExcel(){
+
+    if(finalData.length===0){
+        alert("Generate report first!");
+        return;
+    }
+
+    let wb = XLSX.utils.book_new();
+
+    let ws1 = XLSX.utils.json_to_sheet(finalData);
+    let ws2 = XLSX.utils.json_to_sheet(courierSummaryData);
+
+    XLSX.utils.book_append_sheet(wb, ws1, "Product Report");
+    XLSX.utils.book_append_sheet(wb, ws2, "Courier Summary");
+
+    XLSX.writeFile(wb, "Courier_Report_PRO.xlsx");
+}
+
+</script>
+</body>
+</html>
