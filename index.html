@@ -57,15 +57,25 @@ function parseNumber(text){
 }
 
 function normalizeCourier(name){
-    name = name.toLowerCase();
+
+    name = name.toLowerCase().replace(/\s+/g,'');
+
     if(name.includes("blue")) return "BlueDart";
     if(name.includes("ekart")) return "Ekart";
     if(name.includes("delhivery")) return "Delhivery";
     if(name.includes("xpress")) return "XpressBees";
     if(name.includes("shadowfax")) return "Shadowfax";
     if(name.includes("amazon")) return "Amazon";
-    if(name.includes("pick")) return "Pickndel";
+
+    // ✅ FIXED Pickndel variations
+    if(name.includes("pickndel") || 
+       name.includes("pikndel") || 
+       name.includes("pickdel") || 
+       name.includes("pick")) 
+        return "Pickndel";
+
     if(name.includes("blitz")) return "Blitz";
+
     return null;
 }
 
@@ -103,7 +113,6 @@ function generateReport(){
         line = line.trim();
         if(!line || line.startsWith("-") || line.includes("Couriers")) return;
 
-        // FORMAT 1 & 3 → ProductName - 314 OR ProductName - Total: 80
         if(line.includes("-")){
 
             let parts = line.split("-");
@@ -112,7 +121,7 @@ function generateReport(){
 
             let courier = normalizeCourier(left);
 
-            // If NOT courier → product line
+            // Product line
             if(!courier && right){
 
                 currentProduct = cleanProductName(left);
@@ -124,14 +133,13 @@ function generateReport(){
                 return;
             }
 
-            // If courier line
+            // Courier line
             if(courier && currentProduct){
                 products[currentProduct][courier] += parseNumber(right);
                 return;
             }
         }
 
-        // FORMAT 2 → Product:
         if(line.startsWith("Product:")){
             currentProduct = cleanProductName(
                 line.replace("Product:","").trim()
@@ -143,13 +151,11 @@ function generateReport(){
             return;
         }
 
-        // Total Quantity line
         if(line.startsWith("Total Quantity:") && currentProduct){
             products[currentProduct].TotalQty += parseNumber(line);
             return;
         }
 
-        // FORMAT with colon courier
         if(line.includes(":") && currentProduct){
 
             let parts = line.split(":");
@@ -164,8 +170,6 @@ function generateReport(){
     });
 
     finalData = Object.values(products);
-
-    // Sort highest first
     finalData.sort((a,b)=>b.TotalQty - a.TotalQty);
 
     renderTable();
